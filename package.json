@@ -1,0 +1,29 @@
+{
+  "name": "webhook-listener",
+  "version": "1.0.0",
+  "description": "Event-ingestion microservice: receives GitHub/GitLab webhooks, verifies and normalizes them, and publishes internal events to RabbitMQ for the Analysis/Orchestration service.",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "migrate:up": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate.js --migrations-dir database/migrations up",
+    "migrate:down": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate.js --migrations-dir database/migrations down"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/express": "^5.0.0",
+    "@types/node": "^20",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.23.5",
+    "typescript": "^7.0.2"
+  }
+}

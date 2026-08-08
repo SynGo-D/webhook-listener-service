@@ -1,0 +1,5 @@
+{
+  "migration-file-language": "sql",
+  "migrations-dir": "database/migrations",
+  "database-url": "postgres://postgres:postgres@localhost:5433/webhook_listener_db"
+}
