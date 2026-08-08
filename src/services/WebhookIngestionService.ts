@@ -50,7 +50,7 @@ export class WebhookIngestionService {
         // if it's already been handled — before doing the normalization
         // work below.
 
-        const event = handler.normalize(headers, payload);
+        const event = handler.normalize(headers, payload, deliveryId);
 
         // Phase 8: publish `event` to RabbitMQ here, then record
         // `deliveryId` as processed (Phase 7) so a provider redelivery of

@@ -115,7 +115,7 @@ This service is being built incrementally, one phase at a time:
 3. ✅ Provider abstraction (adapter interface + factory)
 4. ✅ Signature verification (GitHub HMAC-SHA256, GitLab secret token)
 5. ✅ Webhook controllers + routes
-6. Event normalization (GitHub PR / GitLab MR → `PullRequestEvent`)
+6. ✅ Event normalization (GitHub PR / GitLab MR → `PullRequestEvent`)
 7. Idempotency / duplicate-event protection
 8. RabbitMQ publisher (durable exchange/queue, persistent messages)
 9. Retry / dead-letter handling

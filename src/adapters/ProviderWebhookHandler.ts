@@ -38,7 +38,11 @@ export interface ProviderWebhookHandler {
 
     /**
      * Converts this provider's raw payload into the internal WebhookEvent
-     * shape. Implemented in Phase 6.
+     * shape. `deliveryId` is passed in rather than recomputed — the caller
+     * (WebhookIngestionService) has already called `extractDeliveryId`
+     * before this, and GitLab's version isn't free (it hashes payload
+     * fields), so recomputing it here would be pure waste.
+     * Implemented in Phase 6.
      */
-    normalize(headers: IncomingHttpHeaders, payload: unknown): WebhookEvent;
+    normalize(headers: IncomingHttpHeaders, payload: unknown, deliveryId: string): WebhookEvent;
 }
