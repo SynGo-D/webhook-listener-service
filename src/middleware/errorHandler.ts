@@ -5,9 +5,13 @@ import { AppError } from "../errors/AppError.js";
  * Global error-handling middleware. Must be registered LAST in app.ts.
  *
  * Behaviour:
- *  • AppError and subclasses → use the error's statusCode + message.
- *  • Any other error         → 500, message withheld (don't leak internals
- *    from a service that receives requests from public webhook senders).
+ *  • AppError and subclasses           → use the error's statusCode + message.
+ *  • express.json() body-parser errors → 400 (malformed JSON is a client
+ *    error, not ours — without this check it would fall through to the
+ *    500 branch below and misreport a bad request as a server failure).
+ *  • Any other error                   → 500, message withheld (don't leak
+ *    internals from a service that receives requests from public webhook
+ *    senders).
  *
  * Correlation/delivery IDs are attached to `req` by upstream middleware
  * (added in a later phase) and included here once structured logging lands,
@@ -23,6 +27,17 @@ export function errorHandler(
         res.status(err.statusCode).json({
             success: false,
             message: err.message,
+        });
+        return;
+    }
+
+    const isBodyParserSyntaxError =
+        err instanceof SyntaxError && (err as SyntaxError & { status?: number }).status === 400;
+
+    if (isBodyParserSyntaxError) {
+        res.status(400).json({
+            success: false,
+            message: "Malformed JSON payload.",
         });
         return;
     }

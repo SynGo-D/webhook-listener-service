@@ -62,6 +62,7 @@ Analysis Engine
 
 | Layer | Responsibility |
 |---|---|
+| `routes/` | Maps HTTP verb/path to controller method — no logic |
 | `controllers/` | HTTP entry points — thin, no business logic |
 | `services/` | Orchestrates verify → normalize → dedup → publish |
 | `adapters/` | Provider-specific handlers (GitHub, GitLab) — Adapter Pattern |
@@ -110,10 +111,10 @@ curl http://localhost:5002/ready    # readiness — DB + RabbitMQ reachable
 This service is being built incrementally, one phase at a time:
 
 1. ✅ Project structure + local infrastructure
-2. Domain event models (`WebhookEvent`, `PullRequestEvent`)
-3. Provider abstraction (adapter interface + factory)
-4. Signature verification (GitHub HMAC-SHA256, GitLab secret token)
-5. Webhook controllers + routes
+2. ✅ Domain event models (`WebhookEvent`, `PullRequestEvent`)
+3. ✅ Provider abstraction (adapter interface + factory)
+4. ✅ Signature verification (GitHub HMAC-SHA256, GitLab secret token)
+5. ✅ Webhook controllers + routes
 6. Event normalization (GitHub PR / GitLab MR → `PullRequestEvent`)
 7. Idempotency / duplicate-event protection
 8. RabbitMQ publisher (durable exchange/queue, persistent messages)

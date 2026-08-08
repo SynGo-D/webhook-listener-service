@@ -4,6 +4,9 @@ import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { isRabbitMQConnected } from "./config/rabbitmq.js";
 import { pool } from "./config/database.js";
+import { WebhookIngestionService } from "./services/WebhookIngestionService.js";
+import { WebhookController } from "./controllers/WebhookController.js";
+import { createWebhookRoutes } from "./routes/webhookRoutes.js";
 
 const app = express();
 
@@ -70,11 +73,24 @@ app.get("/ready", async (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Dependency injection — wire service → controller → routes
+// ---------------------------------------------------------------------------
+
+const webhookIngestionService = new WebhookIngestionService();
+const webhookController       = new WebhookController(webhookIngestionService);
+
+// ---------------------------------------------------------------------------
 // Route mounting
 //
-// Webhook ingestion routes (POST /webhooks/github, POST /webhooks/gitlab)
-// are added once the controller/provider-handler layers exist — see
-// src/controllers/README.md and src/adapters/README.md for the plan.
+// POST /webhooks/github, POST /webhooks/gitlab. Note: normalize() (Phase 6)
+// and GitLab's extractDeliveryId() (Phase 6) are still stubs — a real,
+// correctly-signed, supported-event request will verify and route
+// correctly, then fail loudly at that stub with a 500 until Phase 6 lands.
+// That's the expected, honest state of this phase.
+// ---------------------------------------------------------------------------
+
+app.use("/webhooks", createWebhookRoutes(webhookController));
+
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
