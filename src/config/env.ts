@@ -33,4 +33,14 @@ export const env = {
     // -----------------------------------------------------------------------
 
     RABBITMQ_URL: process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672",
+
+    // -----------------------------------------------------------------------
+    // Webhook signature verification
+    // Must match the secret/token configured in each provider's webhook
+    // settings UI exactly. Generate one with:
+    //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+    // -----------------------------------------------------------------------
+
+    GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET ?? "",
+    GITLAB_WEBHOOK_SECRET: process.env.GITLAB_WEBHOOK_SECRET ?? "",
 };

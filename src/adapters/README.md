@@ -1,17 +1,22 @@
 # adapters
 
 Provider-specific webhook handlers — one per source-control provider
-(GitHub, GitLab), each implementing a shared `ProviderWebhookHandler`
-interface (Adapter Pattern). Each adapter is responsible for:
+(GitHub, GitLab), each implementing the shared `ProviderWebhookHandler`
+interface (Adapter Pattern).
 
-- Verifying that a request's signature/token actually came from that
-  provider (GitHub HMAC-SHA256 `X-Hub-Signature-256`, GitLab's secret-token
-  header) — added in Phase 4.
-- Recognizing which of that provider's event types it received.
-- Normalizing that provider's payload shape into the internal `models/`
-  representation — added in Phase 6.
+- `ProviderWebhookHandler` — the contract: `verifySignature`,
+  `supportsEvent`, `extractDeliveryId`, `normalize`.
+- `GithubWebhookHandler` / `GitlabWebhookHandler` — `supportsEvent`,
+  GitHub's `extractDeliveryId` (reads `X-GitHub-Delivery`), and
+  `verifySignature` (GitHub: HMAC-SHA256 over the raw body via
+  `X-Hub-Signature-256`; GitLab: constant-time comparison of the
+  `X-Gitlab-Token` header against the configured secret — GitLab's
+  mechanism does not cover the payload the way GitHub's HMAC does) are all
+  implemented. `normalize` and GitLab's `extractDeliveryId` remain Phase 6
+  stubs — calling them before then throws a clear "implemented in Phase N"
+  error.
 
 This keeps provider-specific payload structure (field names, header
 conventions, signature schemes) entirely out of the controller and out of
-downstream services. Adding a third provider later means adding one new
-adapter here, not touching the controller.
+downstream services. Adding a third provider later means implementing this
+interface once, not touching the controller.
