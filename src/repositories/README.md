@@ -2,9 +2,12 @@
 
 Data-access layer (Repository Pattern) — the only place raw SQL against
 Postgres lives, matching integration-service's convention of `pg` without
-an ORM. This service persists as little as possible; the primary need is
-tracking processed provider delivery/event IDs for idempotency.
+an ORM.
 
-Planned (Phase 7): `ProcessedEventRepository` — records a delivery ID once
-its event has been published to RabbitMQ, and lets the service layer check
-"have we already handled this one" before publishing again.
+- `ProcessedWebhookEventRepository` — backs idempotency/dedup (Phase 7).
+  `tryMarkProcessed(provider, deliveryId, eventType)` attempts an INSERT
+  directly and treats a unique-violation as "duplicate" rather than doing a
+  SELECT-then-INSERT check — the INSERT's atomicity is what makes this safe
+  under concurrent redelivery. `unmarkProcessed` rolls back the mark if
+  normalization or publishing fails afterward, so a failure doesn't
+  permanently block a legitimate retry of the same delivery.

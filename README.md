@@ -90,7 +90,7 @@ npm install
 # 3. Copy env config (already matches docker-compose.yml's ports/credentials)
 cp .env.example .env
 
-# 4. Run database migrations (none yet — added in Phase 7)
+# 4. Run database migrations
 npm run migrate:up
 
 # 5. Start the service
@@ -116,7 +116,7 @@ This service is being built incrementally, one phase at a time:
 4. ✅ Signature verification (GitHub HMAC-SHA256, GitLab secret token)
 5. ✅ Webhook controllers + routes
 6. ✅ Event normalization (GitHub PR / GitLab MR → `PullRequestEvent`)
-7. Idempotency / duplicate-event protection
+7. ✅ Idempotency / duplicate-event protection
 8. RabbitMQ publisher (durable exchange/queue, persistent messages)
 9. Retry / dead-letter handling
 10. Testing (unit, integration, API, e2e)
