@@ -9,6 +9,7 @@
     "build": "tsc",
     "test:phase4": "npm run build && node scripts/phase4-signature-smoke.mjs",
     "test:phase5": "npm run build && node scripts/phase5-route-smoke.mjs",
+    "test:phase6": "npm run build && node scripts/phase6-normalization-smoke.mjs",
     "start": "node dist/server.js",
     "migrate:up": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate.js --migrations-dir database/migrations up",
     "migrate:down": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate.js --migrations-dir database/migrations down"

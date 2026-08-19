@@ -1,13 +1,13 @@
 import { timingSafeEqual } from "crypto";
 import { IncomingHttpHeaders } from "http";
 import { ProviderWebhookHandler } from "./ProviderWebhookHandler.js";
-import { WebhookEvent } from "../models/WebhookEvent.js";
+import { PullRequestAction, PullRequestEvent } from "../models/PullRequestEvent.js";
 import { env } from "../config/env.js";
+import { AppError } from "../errors/AppError.js";
 
 /**
- * Handles GitLab webhook deliveries — secret-token verification and
- * payload normalization. Normalization is still stubbed out; that lands
- * in Phase 6.
+ * Handles GitLab webhook deliveries — token verification and merge-request
+ * normalization.
  */
 export class GitLabAdapter implements ProviderWebhookHandler {
     /**
@@ -36,7 +36,88 @@ export class GitLabAdapter implements ProviderWebhookHandler {
         return timingSafeEqual(received, expected);
     }
 
-    normalize(_payload: unknown, _headers: IncomingHttpHeaders): WebhookEvent {
-        throw new Error("Not implemented — GitLab payload normalization lands in Phase 6.");
+    normalize(payload: unknown, headers: IncomingHttpHeaders): PullRequestEvent {
+        if (!isRecord(payload) || headers["x-gitlab-event"] !== "Merge Request Hook") {
+            throw new AppError("Unsupported GitLab webhook event.", 400);
+        }
+
+        const attributes = asRecord(payload.object_attributes);
+        const project = asRecord(payload.project);
+        const lastCommit = asRecord(attributes.last_commit);
+        const user = asRecord(payload.user);
+
+        return {
+            provider: "gitlab",
+            eventType: "pull_request",
+            action: toPullRequestAction(attributes.action),
+            deliveryId: requiredHeader(headers, "x-gitlab-event-uuid"),
+            repository: {
+                fullName: requiredString(project, "path_with_namespace"),
+                cloneUrl: requiredString(project, "http_url_to_repo"),
+                defaultBranch: requiredString(project, "default_branch"),
+            },
+            receivedAt: new Date().toISOString(),
+            number: requiredNumber(attributes, "iid"),
+            title: requiredString(attributes, "title"),
+            sourceBranch: requiredString(attributes, "source_branch"),
+            targetBranch: requiredString(attributes, "target_branch"),
+            headSha: requiredString(lastCommit, "id"),
+            authorUsername: requiredString(user, "username"),
+            url: requiredString(attributes, "url"),
+        };
+    }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) {
+        throw new AppError("Malformed GitLab webhook payload.", 400);
+    }
+
+    return value;
+}
+
+function requiredString(record: Record<string, unknown>, field: string): string {
+    const value = record[field];
+    if (typeof value !== "string" || value.length === 0) {
+        throw new AppError(`GitLab payload field "${field}" is required.`, 400);
+    }
+
+    return value;
+}
+
+function requiredNumber(record: Record<string, unknown>, field: string): number {
+    const value = record[field];
+    if (typeof value !== "number") {
+        throw new AppError(`GitLab payload field "${field}" is required.`, 400);
+    }
+
+    return value;
+}
+
+function requiredHeader(headers: IncomingHttpHeaders, name: string): string {
+    const value = headers[name];
+    if (typeof value !== "string" || value.length === 0) {
+        throw new AppError(`GitLab header "${name}" is required.`, 400);
+    }
+
+    return value;
+}
+
+function toPullRequestAction(value: unknown): PullRequestAction {
+    switch (value) {
+        case "open":
+            return "opened";
+        case "update":
+            return "synchronize";
+        case "close":
+            return "closed";
+        case "reopen":
+            return "reopened";
+        default:
+            throw new AppError(`Unsupported GitLab merge-request action: "${String(value)}".`, 400);
     }
 }

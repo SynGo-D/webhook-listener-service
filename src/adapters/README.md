@@ -8,8 +8,8 @@ interface (Adapter Pattern). Each adapter is responsible for:
   provider (GitHub HMAC-SHA256 `X-Hub-Signature-256`, GitLab's secret-token
   header) — added in Phase 4.
 - Recognizing which of that provider's event types it received.
-- Normalizing that provider's payload shape into the internal `models/`
-  representation — added in Phase 6.
+- Normalizing that provider's pull-request payload shape into the internal
+  `models/` representation — implemented in Phase 6.
 
 This keeps provider-specific payload structure (field names, header
 conventions, signature schemes) entirely out of the controller and out of

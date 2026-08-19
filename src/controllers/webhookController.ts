@@ -18,10 +18,11 @@ function receiveWebhook(provider: string, req: Request, res: Response): void {
         throw new AppError("Invalid webhook signature.", 401);
     }
 
-    // The event will be normalized and published in later phases.
+    const event = handler.normalize(req.body, req.headers);
+
     res.status(202).json({
         accepted: true,
-        provider,
+        event,
     });
 }
 

@@ -1,13 +1,13 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { IncomingHttpHeaders } from "http";
 import { ProviderWebhookHandler } from "./ProviderWebhookHandler.js";
-import { WebhookEvent } from "../models/WebhookEvent.js";
+import { PullRequestAction, PullRequestEvent } from "../models/PullRequestEvent.js";
 import { env } from "../config/env.js";
+import { AppError } from "../errors/AppError.js";
 
 /**
- * Handles GitHub webhook deliveries — HMAC-SHA256 signature verification
- * and payload normalization. Normalization is still stubbed out; that
- * lands in Phase 6.
+ * Handles GitHub webhook deliveries — signature verification and
+ * pull-request normalization.
  */
 export class GitHubAdapter implements ProviderWebhookHandler {
     /**
@@ -40,7 +40,80 @@ export class GitHubAdapter implements ProviderWebhookHandler {
         return timingSafeEqual(received, expected);
     }
 
-    normalize(_payload: unknown, _headers: IncomingHttpHeaders): WebhookEvent {
-        throw new Error("Not implemented — GitHub payload normalization lands in Phase 6.");
+    normalize(payload: unknown, headers: IncomingHttpHeaders): PullRequestEvent {
+        if (!isRecord(payload) || headers["x-github-event"] !== "pull_request") {
+            throw new AppError("Unsupported GitHub webhook event.", 400);
+        }
+
+        const pullRequest = asRecord(payload.pull_request);
+        const repository = asRecord(payload.repository);
+        const action = toPullRequestAction(payload.action);
+
+        return {
+            provider: "github",
+            eventType: "pull_request",
+            action,
+            deliveryId: requiredHeader(headers, "x-github-delivery"),
+            repository: {
+                fullName: requiredString(repository, "full_name"),
+                cloneUrl: requiredString(repository, "clone_url"),
+                defaultBranch: requiredString(repository, "default_branch"),
+            },
+            receivedAt: new Date().toISOString(),
+            number: requiredNumber(payload, "number"),
+            title: requiredString(pullRequest, "title"),
+            sourceBranch: requiredString(asRecord(pullRequest.head), "ref"),
+            targetBranch: requiredString(asRecord(pullRequest.base), "ref"),
+            headSha: requiredString(asRecord(pullRequest.head), "sha"),
+            authorUsername: requiredString(asRecord(pullRequest.user), "login"),
+            url: requiredString(pullRequest, "html_url"),
+        };
     }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) {
+        throw new AppError("Malformed GitHub webhook payload.", 400);
+    }
+
+    return value;
+}
+
+function requiredString(record: Record<string, unknown>, field: string): string {
+    const value = record[field];
+    if (typeof value !== "string" || value.length === 0) {
+        throw new AppError(`GitHub payload field "${field}" is required.`, 400);
+    }
+
+    return value;
+}
+
+function requiredNumber(record: Record<string, unknown>, field: string): number {
+    const value = record[field];
+    if (typeof value !== "number") {
+        throw new AppError(`GitHub payload field "${field}" is required.`, 400);
+    }
+
+    return value;
+}
+
+function requiredHeader(headers: IncomingHttpHeaders, name: string): string {
+    const value = headers[name];
+    if (typeof value !== "string" || value.length === 0) {
+        throw new AppError(`GitHub header "${name}" is required.`, 400);
+    }
+
+    return value;
+}
+
+function toPullRequestAction(value: unknown): PullRequestAction {
+    if (value === "opened" || value === "synchronize" || value === "closed" || value === "reopened") {
+        return value;
+    }
+
+    throw new AppError(`Unsupported GitHub pull-request action: "${String(value)}".`, 400);
 }

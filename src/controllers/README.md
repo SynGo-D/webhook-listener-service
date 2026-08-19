@@ -23,5 +23,6 @@ Current behavior:
 - Invalid or missing credentials receive HTTP `401 Unauthorized`.
 - Requests without a body receive HTTP `400 Bad Request`.
 - Unknown routes receive HTTP `404 Not Found`.
-- Valid requests are acknowledged only for now.
-- Event normalization and downstream publishing will be added in later phases.
+- Valid requests are normalized into the shared pull-request event shape before
+   they are acknowledged.
+- Deduplication and downstream publishing will be added in later phases.
