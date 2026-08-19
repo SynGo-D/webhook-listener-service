@@ -1,5 +1,15 @@
 import "dotenv/config";
 
+function requiredSecret(name: string): string {
+    const value = process.env[name];
+
+    if (!value) {
+        throw new Error(`${name} must be set to verify webhook requests.`);
+    }
+
+    return value;
+}
+
 /**
  * Centralised, type-safe access to all environment variables.
  *
@@ -33,4 +43,11 @@ export const env = {
     // -----------------------------------------------------------------------
 
     RABBITMQ_URL: process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672",
-};
+
+    // -----------------------------------------------------------------------
+    // Provider webhook secrets (Phase 4 — signature verification)
+    // -----------------------------------------------------------------------
+
+    GITHUB_WEBHOOK_SECRET: requiredSecret("GITHUB_WEBHOOK_SECRET"), 
+    GITLAB_WEBHOOK_SECRET: requiredSecret("GITLAB_WEBHOOK_SECRET"), 
+};                                             

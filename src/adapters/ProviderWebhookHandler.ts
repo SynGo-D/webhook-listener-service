@@ -2,9 +2,9 @@ import { IncomingHttpHeaders } from "http";
 import { WebhookEvent } from "../models/WebhookEvent.js";
 
 /**
- * The contract every provider-specific adapter must satisfy (Adapter
+ * The contract every provider specific adapter must satisfy (Adapter
  * Pattern). Keeping this interface separate from GitHubAdapter/GitLabAdapter
- * is what lets the factory — and everything above it — depend on "some
+ * is what lets the factory and everything above it depend on "some
  * adapter" instead of a specific provider's implementation.
  */
 export interface ProviderWebhookHandler {
