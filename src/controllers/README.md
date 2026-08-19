@@ -14,4 +14,14 @@ HTTP entry points for incoming webhooks (`POST /webhooks/github`,
 No GitHub/GitLab API calls and no code-analysis logic ever live here — see
 the target architecture in the root README.
 
-Planned: Phase 5.
+Implemented: Phase 5.
+
+Current behavior:
+
+- `POST /webhooks/github` and `POST /webhooks/gitlab` are mounted.
+- Valid signatures or tokens receive HTTP `202 Accepted`.
+- Invalid or missing credentials receive HTTP `401 Unauthorized`.
+- Requests without a body receive HTTP `400 Bad Request`.
+- Unknown routes receive HTTP `404 Not Found`.
+- Valid requests are acknowledged only for now.
+- Event normalization and downstream publishing will be added in later phases.
