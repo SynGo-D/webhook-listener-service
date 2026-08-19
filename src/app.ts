@@ -4,6 +4,7 @@ import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { isRabbitMQConnected } from "./config/rabbitmq.js";
 import { pool } from "./config/database.js";
+import webhookController from "./controllers/webhookController.js";
 
 const app = express();
 
@@ -69,13 +70,9 @@ app.get("/ready", async (_req, res) => {
     });
 });
 
-// ---------------------------------------------------------------------------
-// Route mounting
-//
-// Webhook ingestion routes (POST /webhooks/github, POST /webhooks/gitlab)
-// are added once the controller/provider-handler layers exist — see
-// src/controllers/README.md and src/adapters/README.md for the plan.
-// ---------------------------------------------------------------------------
+// Webhook routes must come after JSON parsing so the controller can use both
+// the parsed payload and the raw bytes captured for signature verification.
+app.use("/webhooks", webhookController);
 
 // ---------------------------------------------------------------------------
 // Global error handler (must be last)

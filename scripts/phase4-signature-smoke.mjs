@@ -25,6 +25,7 @@ assert.equal(
 );
 assert.equal(github.verifySignature(body, {}), false);
 
+
 assert.equal(
     gitlab.verifySignature(body, {
         "x-gitlab-token": "dev-gitlab-secret",
