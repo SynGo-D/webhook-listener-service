@@ -39,6 +39,9 @@ const gitlabBody = JSON.stringify({
 });
 const signature =
     "sha256=" + createHmac("sha256", "dev-github-secret").update(githubBody).digest("hex");
+const runId = Date.now();
+const githubDeliveryId = `github-delivery-${runId}`;
+const gitlabDeliveryId = `gitlab-delivery-${runId}`;
 
 function request(server, path, headers, requestBody = githubBody) {
     return new Promise((resolve, reject) => {
@@ -78,7 +81,7 @@ try {
     const accepted = await request(server, "/webhooks/github", {
         "x-hub-signature-256": signature,
         "x-github-event": "pull_request",
-        "x-github-delivery": "github-delivery-42",
+        "x-github-delivery": githubDeliveryId,
     });
     assert.equal(accepted.statusCode, 202);
     assert.equal(JSON.parse(accepted.body).event.provider, "github");
@@ -95,7 +98,7 @@ try {
     const gitlabAccepted = await request(server, "/webhooks/gitlab", {
         "x-gitlab-token": "dev-gitlab-secret",
         "x-gitlab-event": "Merge Request Hook",
-        "x-gitlab-event-uuid": "gitlab-delivery-42",
+        "x-gitlab-event-uuid": gitlabDeliveryId,
     }, gitlabBody);
     assert.equal(gitlabAccepted.statusCode, 202);
     assert.equal(JSON.parse(gitlabAccepted.body).event.provider, "gitlab");

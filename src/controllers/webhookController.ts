@@ -2,10 +2,11 @@
 import { Router, type Request, type Response } from "express";
 import { ProviderHandlerFactory } from "../factories/ProviderHandlerFactory.js";
 import { AppError } from "../errors/AppError.js";
+import { processedEventRepository } from "../repositories/ProcessedEventRepository.js";
 
 const router = Router();
 
-function receiveWebhook(provider: string, req: Request, res: Response): void {
+async function receiveWebhook(provider: string, req: Request, res: Response): Promise<void> {
     const rawBody = req.rawBody;
 
     if (!rawBody || rawBody.length === 0) {
@@ -19,6 +20,21 @@ function receiveWebhook(provider: string, req: Request, res: Response): void {
     }
 
     const event = handler.normalize(req.body, req.headers);
+    const isNewDelivery = await processedEventRepository.claim({
+        provider: event.provider,
+        deliveryId: event.deliveryId,
+        eventType: event.eventType,
+    });
+
+    if (!isNewDelivery) {
+        res.status(200).json({
+            accepted: true,
+            duplicate: true,
+            provider,
+            deliveryId: event.deliveryId,
+        });
+        return;
+    }
 
     res.status(202).json({
         accepted: true,
@@ -26,12 +42,8 @@ function receiveWebhook(provider: string, req: Request, res: Response): void {
     });
 }
 
-router.post("/github", (req, res) => {
-    receiveWebhook("github", req, res);
-});
+router.post("/github", (req, res) => receiveWebhook("github", req, res));
 
-router.post("/gitlab", (req, res) => {
-    receiveWebhook("gitlab", req, res);
-});
+router.post("/gitlab", (req, res) => receiveWebhook("gitlab", req, res));
 
 export default router;

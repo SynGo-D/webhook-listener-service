@@ -89,7 +89,7 @@ npm install
 # 3. Copy env config (already matches docker-compose.yml's ports/credentials)
 cp .env.example .env
 
-# 4. Run database migrations (none yet — added in Phase 7)
+# 4. Run database migrations
 npm run migrate:up
 
 # 5. Start the service
