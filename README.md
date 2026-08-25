@@ -9,6 +9,13 @@ Analysis/Orchestration service to consume.
 provider events into trusted, normalized internal events, quickly and
 reliably.
 
+> **Interop note:** the platform also has a separate `SynGo-D/RabbitMQ`
+> repo that already declares a durable `pr_queue` and consumes
+> `PRJob`-shaped messages via plain `sendToQueue`. This service's
+> messaging layer (Phase 8) is built to interoperate with that exactly —
+> see `src/messaging/README.md` — rather than introducing a second,
+> incompatible message contract or topology.
+
 ## Architecture
 
 ```text
@@ -117,7 +124,7 @@ This service is being built incrementally, one phase at a time:
 5. ✅ Webhook controllers + routes
 6. ✅ Event normalization (GitHub PR / GitLab MR → `PullRequestEvent`)
 7. ✅ Idempotency / duplicate-event protection
-8. RabbitMQ publisher (durable exchange/queue, persistent messages)
-9. Retry / dead-letter handling
+8. ✅ RabbitMQ publisher (durable exchange/queue, persistent messages)
+9. ✅ Retry / dead-letter handling
 10. Testing (unit, integration, API, e2e)
 11. Docker/AWS/Kubernetes deployment configuration

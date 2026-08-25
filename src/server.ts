@@ -3,11 +3,30 @@
 import app from "./app.js";
 import { env } from "./config/env.js";
 import { connectDatabase, pool } from "./config/database.js";
-import { connectRabbitMQ, closeRabbitMQ } from "./config/rabbitmq.js";
+import { connectRabbitMQ, closeRabbitMQ, getRabbitMQChannel, onRabbitMQReconnect } from "./config/rabbitmq.js";
+import { setupMessagingTopology } from "./messaging/topology.js";
 
 async function main(): Promise<void> {
     await connectDatabase();
     await connectRabbitMQ();
+
+    // Re-run topology setup after every reconnect — the exchange/queue/
+    // binding are durable and persist on the broker across a connection
+    // drop, but a new channel still needs to (re-)declare them. Registered
+    // before the initial setup call below so the exact same function
+    // handles both the first connection and every reconnect thereafter.
+    onRabbitMQReconnect(() => setupMessagingTopology(getRabbitMQChannel()));
+
+    // Fail-fast, same as the connection checks above: this service
+    // shouldn't accept webhook traffic it can't durably hand off to
+    // pr_queue.
+    try {
+        await setupMessagingTopology(getRabbitMQChannel());
+        console.log("RabbitMQ messaging topology ready.");
+    } catch (error) {
+        console.error("Failed to set up RabbitMQ messaging topology:", error);
+        process.exit(1);
+    }
 
     const server = app.listen(env.PORT, () => {
         console.log(`Webhook Listener running on port ${env.PORT}`);

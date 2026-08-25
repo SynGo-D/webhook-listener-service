@@ -1,6 +1,7 @@
 import type { IncomingHttpHeaders } from "node:http";
 import { ProviderHandlerFactory } from "../factories/ProviderHandlerFactory.js";
 import { ProcessedWebhookEventRepository } from "../repositories/ProcessedWebhookEventRepository.js";
+import { PullRequestJobPublisher } from "../messaging/PullRequestJobPublisher.js";
 import { InvalidSignatureError } from "../errors/InvalidSignatureError.js";
 
 export type WebhookIngestResult =
@@ -43,9 +44,14 @@ const CURRENT_EVENT_TYPE = "pull_request";
 export class WebhookIngestionService {
 
     private readonly processedEventRepository: ProcessedWebhookEventRepository;
+    private readonly publisher:                PullRequestJobPublisher;
 
-    constructor(processedEventRepository?: ProcessedWebhookEventRepository) {
+    constructor(
+        processedEventRepository?: ProcessedWebhookEventRepository,
+        publisher?:                PullRequestJobPublisher
+    ) {
         this.processedEventRepository = processedEventRepository ?? new ProcessedWebhookEventRepository();
+        this.publisher                = publisher ?? new PullRequestJobPublisher();
     }
 
     async ingest(
@@ -86,10 +92,7 @@ export class WebhookIngestionService {
 
         try {
             const event = handler.normalize(headers, payload, deliveryId);
-
-            // Phase 8: publish `event` to RabbitMQ here — inside this try
-            // block, so a publish failure also triggers the rollback below.
-            void event;
+            await this.publisher.publish(event);
 
             return { outcome: "accepted", deliveryId };
 
