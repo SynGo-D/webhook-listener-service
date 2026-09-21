@@ -3,10 +3,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { ProviderWebhookHandler } from "./ProviderWebhookHandler.js";
 import type { WebhookEvent } from "../models/WebhookEvent.js";
 import type { PullRequestAction, PullRequestState } from "../models/PullRequestEvent.js";
-import { AppError } from "../errors/AppError.js";
 import { WebhookValidationError } from "../errors/WebhookValidationError.js";
 import { requireFields } from "./requireFields.js";
-import { env } from "../config/env.js";
 
 /** Every path `normalize()` and `extractDeliveryId()` read — see parsePayload. */
 const GITLAB_REQUIRED_FIELDS = [
@@ -55,47 +53,52 @@ interface GitlabMergeRequestPayload {
  * event type in the `X-Gitlab-Event` header, so `supportsEvent` is a cheap
  * header read implemented now, same as GitHub's.
  *
- * Unlike GitHub, GitLab does not reliably send a per-delivery UUID header
- * across all versions/self-managed instances — a real delivery-ID needs to
- * be derived from stable Merge Request payload fields (project ID +
- * merge-request IID + updated_at). That requires the real GitLab MR
- * payload shape, so it's implemented alongside normalization in Phase 6
- * rather than guessed at here.
+ * Delivery IDs come from GitLab's `Idempotency-Key` header where present,
+ * falling back to a payload fingerprint on older GitLab — see
+ * extractDeliveryId.
  */
 export class GitlabWebhookHandler implements ProviderWebhookHandler {
 
     public readonly provider = "gitlab" as const;
+
+    extractRepositoryFullName(payload: unknown): string | null {
+        const fullName = (payload as { project?: { path_with_namespace?: unknown } } | null)
+            ?.project?.path_with_namespace;
+        return typeof fullName === "string" && fullName.length > 0 ? fullName : null;
+    }
 
     /**
      * GitLab's mechanism is a static secret token (`X-Gitlab-Token`), not
      * an HMAC over the body — unlike GitHub, this only authenticates that
      * the sender knows the secret; it does not cryptographically cover the
      * payload, so a compromised network intermediary could in principle
-     * tamper with the body without invalidating the token. That's a
-     * platform limitation, not something this service can strengthen —
-     * GitLab does not offer an HMAC-based alternative for webhooks.
+     * tamper with the body without invalidating the token.
+     *
+     * GitLab 19.0 added HMAC signing (`webhook-signature`, Standard
+     * Webhooks) when a signing token is configured on the hook. Adopting it
+     * means integration-service setting that token at registration and this
+     * method verifying it — a worthwhile follow-up, not yet done.
      *
      * Still compared with a constant-time check, for the same timing-leak
      * reason as GitHub's signature comparison.
      */
-    verifySignature(_rawBody: Buffer, headers: IncomingHttpHeaders): boolean {
-        if (!env.GITLAB_WEBHOOK_SECRET) {
-            throw new AppError("GITLAB_WEBHOOK_SECRET is not configured.", 500);
-        }
-
+    verifySignature(_rawBody: Buffer, headers: IncomingHttpHeaders, secrets: readonly string[]): boolean {
         const token = headers["x-gitlab-token"];
         if (!token || typeof token !== "string") {
             return false;
         }
 
-        const expected = Buffer.from(env.GITLAB_WEBHOOK_SECRET, "utf8");
-        const actual   = Buffer.from(token, "utf8");
+        const actual = Buffer.from(token, "utf8");
 
-        if (expected.length !== actual.length) {
-            return false;
+        // All candidates checked regardless of an early match — see
+        // GithubWebhookHandler.verifySignature.
+        let matched = false;
+        for (const secret of secrets) {
+            const expected = Buffer.from(secret, "utf8");
+            const equal = expected.length === actual.length && timingSafeEqual(expected, actual);
+            matched = equal || matched;
         }
-
-        return timingSafeEqual(expected, actual);
+        return matched;
     }
 
     supportsEvent(headers: IncomingHttpHeaders): boolean {
@@ -103,15 +106,37 @@ export class GitlabWebhookHandler implements ProviderWebhookHandler {
     }
 
     /**
-     * GitLab has no delivery-ID header, so this derives a stable
-     * fingerprint from (project ID, MR IID, updated_at). Keying on
-     * `updated_at` rather than just the MR's identity is deliberate: a
-     * genuine follow-up change (new commit, edit) bumps `updated_at` and
-     * correctly produces a *different* ID, so Phase 7's dedup only
-     * collapses true redeliveries of the identical webhook, not real
-     * subsequent events on the same MR.
+     * GitLab's per-delivery ID, most reliable source first:
+     *
+     *   1. `Idempotency-Key` (GitLab 17.4+) — documented as unique per
+     *      delivery and stable across retries. Exactly a dedup key.
+     *   2. `webhook-id` (GitLab 19.0+, Standard Webhooks) — same guarantees.
+     *   3. A fingerprint of (project ID, MR IID, updated_at), for older and
+     *      self-managed GitLab that sends neither.
+     *
+     * The fingerprint is a fallback, not the primary, because it can merge
+     * two genuinely different events: two changes to one merge request
+     * inside the same `updated_at` second produce the same ID, and the
+     * second is silently dropped as a "duplicate". The headers can't.
+     *
+     * `X-Gitlab-Event-UUID` is deliberately not used: GitLab documents it
+     * as shared across a chain of recursive webhooks, so it isn't unique
+     * per delivery.
+     *
+     * Header-derived IDs are prefixed so they can never collide with a
+     * fingerprint (a raw SHA-256 hex string) in the dedup table.
      */
-    extractDeliveryId(_headers: IncomingHttpHeaders, payload: unknown): string {
+    extractDeliveryId(headers: IncomingHttpHeaders, payload: unknown): string {
+        const idempotencyKey = headers["idempotency-key"];
+        if (typeof idempotencyKey === "string" && idempotencyKey.length > 0) {
+            return `idem:${idempotencyKey}`;
+        }
+
+        const webhookId = headers["webhook-id"];
+        if (typeof webhookId === "string" && webhookId.length > 0) {
+            return `whid:${webhookId}`;
+        }
+
         const body = this.parsePayload(payload);
         const fingerprint = `${body.project.id}:${body.object_attributes.iid}:${body.object_attributes.updated_at}`;
         return createHash("sha256").update(fingerprint).digest("hex");

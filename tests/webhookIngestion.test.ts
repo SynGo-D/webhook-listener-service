@@ -45,7 +45,24 @@ function validHeaders(deliveryId = "delivery-1") {
     };
 }
 
-function makeHarness(options: { alreadyProcessed?: boolean; publishFails?: boolean } = {}) {
+type Secrets = { secrets: string[]; legacy: boolean };
+
+/** The repository in PAYLOAD is connected, with GITHUB_SECRET as its own secret. */
+const CONNECTED: Secrets = { secrets: [GITHUB_SECRET], legacy: false };
+
+function makeHarness(options: {
+    alreadyProcessed?: boolean;
+    publishFails?: boolean;
+    secrets?: Secrets | Error;
+    legacySecret?: string;
+} = {}) {
+    const secretClient = {
+        getSecrets: vi.fn(async () => {
+            const answer = options.secrets ?? CONNECTED;
+            if (answer instanceof Error) throw answer;
+            return answer;
+        }),
+    };
     const repository = {
         tryMarkProcessed: vi.fn(async () => !options.alreadyProcessed),
         unmarkProcessed:  vi.fn(async () => undefined),
@@ -55,8 +72,11 @@ function makeHarness(options: { alreadyProcessed?: boolean; publishFails?: boole
             if (options.publishFails) throw new Error("broker unreachable");
         }),
     };
-    const service = new WebhookIngestionService(repository as never, publisher as never);
-    return { service, repository, publisher };
+    const service = new WebhookIngestionService(
+        repository as never, publisher as never, secretClient,
+        { github: options.legacySecret ?? "", gitlab: "" }
+    );
+    return { service, repository, publisher, secretClient };
 }
 
 /**
@@ -131,7 +151,10 @@ describe("WebhookIngestionService.ingest", () => {
             unmarkProcessed:  vi.fn(async () => undefined),
         };
         const publisher = { publish: vi.fn(async () => { order.push("publish"); }) };
-        const service = new WebhookIngestionService(repository as never, publisher as never);
+        const secretClient = { getSecrets: vi.fn(async () => CONNECTED) };
+        const service = new WebhookIngestionService(
+            repository as never, publisher as never, secretClient, { github: "", gitlab: "" }
+        );
 
         await service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD);
 
@@ -151,7 +174,8 @@ describe("WebhookIngestionService.ingest", () => {
 
     it("rolls back the dedup mark when normalization fails", async () => {
         const { service, repository } = makeHarness();
-        const hollow = { action: "opened", number: 1, pull_request: {}, repository: {} };
+        // Names its repository (so it gets past the lookup) but nothing else.
+        const hollow = { action: "opened", number: 1, pull_request: {}, repository: { full_name: "acme/shop" } };
         const rawHollow = Buffer.from(JSON.stringify(hollow));
         const sig = "sha256=" + createHmac("sha256", GITHUB_SECRET).update(rawHollow).digest("hex");
 
@@ -176,5 +200,80 @@ describe("WebhookIngestionService.ingest", () => {
         const { service } = makeHarness();
 
         await expect(service.ingest("bitbucket", RAW_BODY, validHeaders(), PAYLOAD)).rejects.toThrow();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Per-integration secrets and the repository allowlist
+// ---------------------------------------------------------------------------
+
+describe("WebhookIngestionService — repository allowlist", () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it("looks up the secrets of the repository the payload names", async () => {
+        const { service, secretClient } = makeHarness();
+
+        await service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD);
+
+        expect(secretClient.getSecrets).toHaveBeenCalledWith("github", "acme/shop");
+    });
+
+    it("rejects a correctly-formed delivery for a repository that isn't connected", async () => {
+        // The core of the fix: before, any payload signed with the one shared
+        // secret was queued for analysis, whatever repository it named.
+        const { service, repository, publisher } = makeHarness({ secrets: { secrets: [], legacy: false } });
+
+        await expect(service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD))
+            .rejects.toBeInstanceOf(InvalidSignatureError);
+        expect(repository.tryMarkProcessed).not.toHaveBeenCalled();
+        expect(publisher.publish).not.toHaveBeenCalled();
+    });
+
+    it("rejects a delivery signed with another repository's secret", async () => {
+        // A leaked secret for one repository must not unlock another.
+        const { service } = makeHarness({ secrets: { secrets: ["a-different-repositorys-secret"], legacy: false } });
+
+        await expect(service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD))
+            .rejects.toBeInstanceOf(InvalidSignatureError);
+    });
+
+    it("rejects a payload that doesn't name a repository, the same way as a bad signature", async () => {
+        const { service, secretClient } = makeHarness();
+        const { repository: _dropped, ...noRepository } = PAYLOAD;
+
+        await expect(service.ingest("github", RAW_BODY, validHeaders(), noRepository))
+            .rejects.toBeInstanceOf(InvalidSignatureError);
+        expect(secretClient.getSecrets).not.toHaveBeenCalled();
+    });
+
+    it("accepts the old shared secret only for a repository flagged as legacy", async () => {
+        const { service } = makeHarness({
+            secrets: { secrets: [], legacy: true },
+            legacySecret: GITHUB_SECRET,
+        });
+
+        const result = await service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD);
+        expect(result.outcome).toBe("accepted");
+    });
+
+    it("never accepts the old shared secret for a repository connected with its own secret", async () => {
+        // The legacy fallback must not become a way around per-integration
+        // secrets: a leaked shared secret stays useless against new connections.
+        const { service } = makeHarness({
+            secrets: { secrets: ["this-repos-own-secret"], legacy: false },
+            legacySecret: GITHUB_SECRET,
+        });
+
+        await expect(service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD))
+            .rejects.toBeInstanceOf(InvalidSignatureError);
+    });
+
+    it("propagates a lookup outage without writing or publishing anything", async () => {
+        const outage = Object.assign(new Error("Webhook verification is temporarily unavailable."), { statusCode: 503 });
+        const { service, repository, publisher } = makeHarness({ secrets: outage });
+
+        await expect(service.ingest("github", RAW_BODY, validHeaders(), PAYLOAD)).rejects.toThrow(/unavailable/);
+        expect(repository.tryMarkProcessed).not.toHaveBeenCalled();
+        expect(publisher.publish).not.toHaveBeenCalled();
     });
 });

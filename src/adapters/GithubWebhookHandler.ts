@@ -5,8 +5,6 @@ import type { WebhookEvent } from "../models/WebhookEvent.js";
 import type { PullRequestAction, PullRequestState } from "../models/PullRequestEvent.js";
 import { WebhookValidationError } from "../errors/WebhookValidationError.js";
 import { requireFields } from "./requireFields.js";
-import { AppError } from "../errors/AppError.js";
-import { env } from "../config/env.js";
 
 const SIGNATURE_PREFIX = "sha256=";
 
@@ -65,6 +63,12 @@ export class GithubWebhookHandler implements ProviderWebhookHandler {
 
     public readonly provider = "github" as const;
 
+    extractRepositoryFullName(payload: unknown): string | null {
+        const fullName = (payload as { repository?: { full_name?: unknown } } | null)
+            ?.repository?.full_name;
+        return typeof fullName === "string" && fullName.length > 0 ? fullName : null;
+    }
+
     /**
      * Recomputes the HMAC-SHA256 over the exact raw body bytes (see
      * app.ts's express.json({ verify }) hook) and compares it to the
@@ -73,33 +77,29 @@ export class GithubWebhookHandler implements ProviderWebhookHandler {
      * timing, which is exactly the kind of side channel HMAC signatures
      * exist to close.
      */
-    verifySignature(rawBody: Buffer, headers: IncomingHttpHeaders): boolean {
-        if (!env.GITHUB_WEBHOOK_SECRET) {
-            // Misconfiguration, not an invalid request — fail loudly (500)
-            // rather than silently rejecting every legitimate delivery.
-            throw new AppError("GITHUB_WEBHOOK_SECRET is not configured.", 500);
-        }
-
+    verifySignature(rawBody: Buffer, headers: IncomingHttpHeaders, secrets: readonly string[]): boolean {
         const signatureHeader = headers["x-hub-signature-256"];
         if (!signatureHeader || typeof signatureHeader !== "string") {
             return false;
         }
 
-        const expectedSignature =
-            SIGNATURE_PREFIX +
-            createHmac("sha256", env.GITHUB_WEBHOOK_SECRET).update(rawBody).digest("hex");
+        const actual = Buffer.from(signatureHeader, "utf8");
 
-        const expected = Buffer.from(expectedSignature, "utf8");
-        const actual   = Buffer.from(signatureHeader, "utf8");
-
-        // timingSafeEqual throws on length mismatch rather than returning
-        // false — guard explicitly so a differently-sized header fails
-        // closed instead of crashing the request.
-        if (expected.length !== actual.length) {
-            return false;
+        // Every candidate is checked even after a match, so response time
+        // doesn't reveal which of a repository's hooks a signature belongs to.
+        let matched = false;
+        for (const secret of secrets) {
+            const expected = Buffer.from(
+                SIGNATURE_PREFIX + createHmac("sha256", secret).update(rawBody).digest("hex"),
+                "utf8"
+            );
+            // timingSafeEqual throws on length mismatch rather than
+            // returning false — guard so a differently-sized header fails
+            // closed instead of crashing the request.
+            const equal = expected.length === actual.length && timingSafeEqual(expected, actual);
+            matched = equal || matched;
         }
-
-        return timingSafeEqual(expected, actual);
+        return matched;
     }
 
     supportsEvent(headers: IncomingHttpHeaders): boolean {

@@ -199,5 +199,38 @@ describe("payload shape validation", () => {
             expect(() => new GitlabWebhookHandler().extractDeliveryId({}, { project: {} }))
                 .toThrow(WebhookValidationError);
         });
+
+        it("prefers GitLab's Idempotency-Key header, which is stable across retries", () => {
+            // The payload fingerprint can't tell a retry from a genuinely new
+            // event that lands in the same second; the header can.
+            const handler = new GitlabWebhookHandler();
+            const headers = { "idempotency-key": "5f0c-retry-stable", "webhook-id": "msg_1" };
+
+            expect(handler.extractDeliveryId(headers, gitlabPayload())).toBe("idem:5f0c-retry-stable");
+        });
+
+        it("falls back to the webhook-id header when there is no Idempotency-Key", () => {
+            const handler = new GitlabWebhookHandler();
+
+            expect(handler.extractDeliveryId({ "webhook-id": "msg_1" }, gitlabPayload())).toBe("whid:msg_1");
+        });
+
+        it("namespaces header IDs so they can never collide with a fingerprint", () => {
+            const handler = new GitlabWebhookHandler();
+            const fingerprint = handler.extractDeliveryId({}, gitlabPayload());
+
+            expect(handler.extractDeliveryId({ "idempotency-key": fingerprint }, gitlabPayload()))
+                .not.toBe(fingerprint);
+        });
+
+        it("ignores an empty or array-valued header and uses the fingerprint", () => {
+            const handler = new GitlabWebhookHandler();
+            const fingerprint = handler.extractDeliveryId({}, gitlabPayload());
+
+            expect(handler.extractDeliveryId({ "idempotency-key": "" }, gitlabPayload())).toBe(fingerprint);
+            expect(handler.extractDeliveryId(
+                { "idempotency-key": ["a", "b"] as unknown as string }, gitlabPayload()
+            )).toBe(fingerprint);
+        });
     });
 });

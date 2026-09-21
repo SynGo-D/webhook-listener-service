@@ -13,12 +13,27 @@ export interface ProviderWebhookHandler {
     readonly provider: Provider;
 
     /**
-     * Verifies the request actually came from this provider (GitHub
-     * HMAC-SHA256 over the raw body / GitLab secret-token header). Must be
-     * called — and must pass — before the payload is parsed or normalized.
-     * Implemented in Phase 4.
+     * The repository this payload *claims* to be for (`owner/name`, or
+     * `group/sub/name` on GitLab), or null if it doesn't say.
+     *
+     * Read before verification, because it decides which secrets to verify
+     * against — each integration has its own. That is safe only because
+     * nothing is trusted on the strength of it: a payload naming someone
+     * else's repository must then be signed with *that* repository's
+     * secret, which the sender doesn't have. It must stay a pure read of
+     * the parsed body — no side effects, no normalization.
      */
-    verifySignature(rawBody: Buffer, headers: IncomingHttpHeaders): boolean;
+    extractRepositoryFullName(payload: unknown): string | null;
+
+    /**
+     * Verifies the request actually came from this provider (GitHub
+     * HMAC-SHA256 over the raw body / GitLab secret-token header), against
+     * any of `secrets`. More than one is legitimate: two users connecting
+     * the same repository register two hooks with two secrets. An empty
+     * list must return false. Must pass before anything is written or
+     * published.
+     */
+    verifySignature(rawBody: Buffer, headers: IncomingHttpHeaders, secrets: readonly string[]): boolean;
 
     /**
      * True if this request's event type is one we currently normalize

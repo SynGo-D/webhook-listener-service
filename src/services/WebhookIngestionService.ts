@@ -3,6 +3,9 @@ import { ProviderHandlerFactory } from "../factories/ProviderHandlerFactory.js";
 import { ProcessedWebhookEventRepository } from "../repositories/ProcessedWebhookEventRepository.js";
 import { PullRequestJobPublisher } from "../messaging/PullRequestJobPublisher.js";
 import { InvalidSignatureError } from "../errors/InvalidSignatureError.js";
+import { WebhookSecretClient } from "../clients/WebhookSecretClient.js";
+import { env } from "../config/env.js";
+import type { Provider } from "../models/RepositoryRef.js";
 
 export type WebhookIngestResult =
     | { outcome: "accepted"; deliveryId: string }
@@ -16,16 +19,18 @@ const CURRENT_EVENT_TYPE = "pull_request";
 /**
  * Orchestrates the webhook ingestion pipeline:
  *
- *   verify signature → check event is supported → extract delivery ID
- *     → deduplicate → normalize → [Phase 8: publish]
+ *   identify claimed repository → look up its secrets → verify signature
+ *     → check event is supported → extract delivery ID → deduplicate
+ *     → normalize → publish
  *
  * This is the only place that pipeline order is encoded — the controller
  * just calls `ingest()` and turns the result into an HTTP response.
  *
- * Signature verification runs strictly first: checking anything about the
- * payload or event type before proving the request came from the provider
- * it claims to would let an unauthenticated caller probe this service's
- * behavior without ever passing verification.
+ * Nothing is written, published, or revealed before the signature verifies.
+ * The only step ahead of it is a read-only lookup of the secrets for the
+ * repository the payload names — unavoidable now that each integration has
+ * its own secret — and every failure before or at verification returns the
+ * same 401, so an unauthenticated caller learns nothing from the response.
  *
  * Deduplication marks a delivery processed *before* normalizing/publishing
  * (that's what makes it safe under concurrent redelivery — see
@@ -45,13 +50,22 @@ export class WebhookIngestionService {
 
     private readonly processedEventRepository: ProcessedWebhookEventRepository;
     private readonly publisher:                PullRequestJobPublisher;
+    private readonly secretClient:             Pick<WebhookSecretClient, "getSecrets">;
+    private readonly legacySecrets:            Record<Provider, string>;
 
     constructor(
         processedEventRepository?: ProcessedWebhookEventRepository,
-        publisher?:                PullRequestJobPublisher
+        publisher?:                PullRequestJobPublisher,
+        secretClient?:             Pick<WebhookSecretClient, "getSecrets">,
+        legacySecrets?:            Record<Provider, string>
     ) {
         this.processedEventRepository = processedEventRepository ?? new ProcessedWebhookEventRepository();
         this.publisher                = publisher ?? new PullRequestJobPublisher();
+        this.secretClient             = secretClient ?? new WebhookSecretClient();
+        this.legacySecrets            = legacySecrets ?? {
+            github: env.GITHUB_WEBHOOK_SECRET,
+            gitlab: env.GITLAB_WEBHOOK_SECRET,
+        };
     }
 
     async ingest(
@@ -63,8 +77,30 @@ export class WebhookIngestionService {
 
         const handler = ProviderHandlerFactory.create(provider);
 
-        const signatureValid = handler.verifySignature(rawBody, headers);
-        if (!signatureValid) {
+        // Which repository does this delivery claim to be for? That decides
+        // which secrets can verify it. A payload that names none can't be
+        // verified at all, and is rejected exactly like a bad signature — a
+        // distinct response would tell a prober something.
+        const repositoryFullName = handler.extractRepositoryFullName(payload);
+        if (!repositoryFullName) {
+            throw new InvalidSignatureError();
+        }
+
+        // Read-only lookup, before verification. This is the one thing an
+        // unauthenticated request can cause; it writes nothing, publishes
+        // nothing, and is bounded by the rate limiters and the lookup cache.
+        const { secrets, legacy } = await this.secretClient.getSecrets(handler.provider, repositoryFullName);
+
+        // The old shared secret is only a candidate for repositories whose
+        // integration predates per-integration secrets — never for anything
+        // connected since, so leaking it can't forge deliveries for them.
+        const legacySecret = this.legacySecrets[handler.provider];
+        const candidates = legacy && legacySecret ? [...secrets, legacySecret] : secrets;
+
+        // An unconnected repository has no candidates and fails here: this
+        // is the allowlist. Same 401 as a wrong signature, deliberately, so
+        // the response doesn't reveal which repositories are connected.
+        if (!handler.verifySignature(rawBody, headers, candidates)) {
             throw new InvalidSignatureError();
         }
 
