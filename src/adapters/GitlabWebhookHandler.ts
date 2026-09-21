@@ -35,6 +35,7 @@ interface GitlabMergeRequestPayload {
     object_attributes: {
         iid:           number;
         title:         string;
+        description?:  string | null;
         state:         "opened" | "closed" | "merged" | "locked";
         action:        string;
         url:           string;
@@ -165,6 +166,7 @@ export class GitlabWebhookHandler implements ProviderWebhookHandler {
             state:         this.mapState(attrs.state),
 
             title:        attrs.title,
+            description:  attrs.description || undefined,
             sourceBranch: attrs.source_branch,
             targetBranch: attrs.target_branch,
             commitSha:    attrs.last_commit?.id,

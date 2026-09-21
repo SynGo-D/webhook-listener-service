@@ -36,6 +36,7 @@ interface GithubPullRequestPayload {
         state:      "open" | "closed";
         merged:     boolean;
         title:      string;
+        body?:      string | null;
         html_url:   string;
         created_at: string;
         updated_at: string;
@@ -141,6 +142,7 @@ export class GithubWebhookHandler implements ProviderWebhookHandler {
             state:         this.mapState(pr.state, pr.merged),
 
             title:        pr.title,
+            description:  pr.body || undefined,
             sourceBranch: pr.head.ref,
             targetBranch: pr.base.ref,
             commitSha:    pr.head.sha,

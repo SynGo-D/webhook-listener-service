@@ -76,6 +76,18 @@ describe("payload shape validation", () => {
             expect(event.author).toEqual({ providerUserId: "7", username: "alice" });
         });
 
+        it("carries the PR body as the description, and treats an empty body as none", () => {
+            const handler = new GithubWebhookHandler();
+            const withBody = githubPayload();
+            withBody.pull_request = { ...withBody.pull_request, body: "Adds bulk discounts." } as never;
+            const nullBody = githubPayload();
+            nullBody.pull_request = { ...nullBody.pull_request, body: null } as never;
+
+            expect(handler.normalize({}, withBody, "d1").description).toBe("Adds bulk discounts.");
+            expect(handler.normalize({}, nullBody, "d1").description).toBeUndefined();
+            expect(handler.normalize({}, githubPayload(), "d1").targetBranch).toBe("main");
+        });
+
         it("rejects the shallow-but-hollow payload that used to cause a 500", () => {
             const hollow = { action: "opened", number: 1, pull_request: {}, repository: {} };
 
@@ -157,6 +169,15 @@ describe("payload shape validation", () => {
             expect(event.pullRequestId).toBe("7");
             expect(event.repository.fullName).toBe("acme/shop");
             expect(event.commitSha).toBe("def456");
+        });
+
+        it("carries the MR description", () => {
+            const payload = gitlabPayload();
+            payload.object_attributes = { ...payload.object_attributes, description: "Adds bulk discounts." } as never;
+
+            const event = new GitlabWebhookHandler().normalize({}, payload, "d1");
+            expect(event.description).toBe("Adds bulk discounts.");
+            expect(event.targetBranch).toBe("main");
         });
 
         it("rejects a hollow payload", () => {

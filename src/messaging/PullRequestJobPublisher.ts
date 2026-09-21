@@ -17,7 +17,7 @@ const PUBLISH_RETRY_OPTIONS = { attempts: 3, baseDelayMs: 200 };
  * to do its own idempotency check — it's entirely dependent on this
  * service's Phase 7 dedup never letting a duplicate through.
  */
-interface PRJob {
+export interface PRJob {
     repository: string;
     cloneUrl:   string;
     commit:     string;
@@ -25,7 +25,21 @@ interface PRJob {
     prNumber:   number;
     provider:   "github" | "gitlab";
     timestamp:  string;
+
+    // Added for analysis-engine's AI review, which reviews the PR's diff
+    // against the branch it targets and needs the author's stated intent.
+    // Optional, so consumers that predate them keep working.
+    targetBranch?: string;
+    title?:        string;
+    description?:  string;
 }
+
+/**
+ * PR descriptions can be arbitrarily long (checklists, pasted logs). The
+ * reviewer only needs the gist, and every character here is paid for in
+ * LLM tokens downstream.
+ */
+export const MAX_DESCRIPTION_LENGTH = 4_000;
 
 /**
  * Publishes a normalized PullRequestEvent as a PRJob message.
@@ -33,7 +47,7 @@ interface PRJob {
 export class PullRequestJobPublisher {
 
     async publish(event: PullRequestEvent): Promise<void> {
-        const job = this.toPRJob(event);
+        const job = toPRJob(event);
         const routingKey = buildPullRequestRoutingKey(event.provider, event.action);
 
         // Retries smooth over brief broker blips. If every attempt fails,
@@ -72,22 +86,26 @@ export class PullRequestJobPublisher {
             );
         });
     }
+}
 
-    /**
-     * Maps our richer internal event onto PRJob's narrower shape.
-     * `cloneUrl` isn't part of our domain model — derived from the web URL
-     * by appending ".git", which is a valid HTTPS clone URL for both
-     * GitHub and GitLab repositories.
-     */
-    private toPRJob(event: PullRequestEvent): PRJob {
-        return {
-            repository: event.repository.fullName,
-            cloneUrl:   `${event.repository.url}.git`,
-            commit:     event.commitSha ?? "",
-            branch:     event.sourceBranch,
-            prNumber:   Number(event.pullRequestId),
-            provider:   event.provider,
-            timestamp:  event.receivedAt,
-        };
-    }
+/**
+ * Maps our richer internal event onto PRJob's narrower shape.
+ * `cloneUrl` isn't part of our domain model — derived from the web URL
+ * by appending ".git", which is a valid HTTPS clone URL for both
+ * GitHub and GitLab repositories.
+ */
+export function toPRJob(event: PullRequestEvent): PRJob {
+    return {
+        repository: event.repository.fullName,
+        cloneUrl:   `${event.repository.url}.git`,
+        commit:     event.commitSha ?? "",
+        branch:     event.sourceBranch,
+        prNumber:   Number(event.pullRequestId),
+        provider:   event.provider,
+        timestamp:  event.receivedAt,
+
+        targetBranch: event.targetBranch,
+        title:        event.title,
+        description:  event.description?.slice(0, MAX_DESCRIPTION_LENGTH),
+    };
 }
