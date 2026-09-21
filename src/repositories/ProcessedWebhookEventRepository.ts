@@ -44,6 +44,39 @@ export class ProcessedWebhookEventRepository {
     }
 
     /**
+     * Deletes idempotency records older than `days`, in batches.
+     *
+     * Batched so a first run against a large backlog doesn't hold one long
+     * transaction and lock rows that live deliveries are inserting next to.
+     * Safe to run from several instances at once — deleting an already
+     * deleted row is a no-op.
+     *
+     * @returns number of rows removed
+     */
+    async deleteOlderThan(days: number, batchSize = 5_000): Promise<number> {
+        let total = 0;
+
+        for (;;) {
+            const result = await pool.query(
+                `DELETE FROM processed_webhook_events
+                 WHERE id IN (
+                     SELECT id FROM processed_webhook_events
+                     WHERE processed_at < NOW() - make_interval(days => $1)
+                     LIMIT $2
+                 );`,
+                [days, batchSize]
+            );
+
+            const removed = result.rowCount ?? 0;
+            total += removed;
+
+            if (removed < batchSize) {
+                return total;
+            }
+        }
+    }
+
+    /**
      * Rolls back a `tryMarkProcessed` reservation. Called when normalization
      * or publishing fails after the delivery was marked — without this, a
      * failure partway through the pipeline would leave the delivery

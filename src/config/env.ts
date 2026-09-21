@@ -36,11 +36,29 @@ export const env = {
 
     // -----------------------------------------------------------------------
     // Webhook signature verification
-    // Must match the secret/token configured in each provider's webhook
-    // settings UI exactly. Generate one with:
-    //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+    //
+    // Each integration now has its own webhook secret, fetched from
+    // integration-service per delivery (clients/WebhookSecretClient.ts).
+    // INTERNAL_SERVICE_TOKEN must match integration-service's value.
     // -----------------------------------------------------------------------
 
+    INTEGRATION_SERVICE_URL: process.env.INTEGRATION_SERVICE_URL ?? "http://localhost:5001",
+    INTERNAL_SERVICE_TOKEN:  process.env.INTERNAL_SERVICE_TOKEN ?? "",
+
+    // LEGACY. The single shared secrets every hook was signed with before
+    // per-integration secrets. Only consulted for a repository whose active
+    // integration predates the change (integration-service reports it as
+    // `legacy`), so leaking these no longer affects newer connections.
+    // Remove once every such integration has been reconnected.
     GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET ?? "",
     GITLAB_WEBHOOK_SECRET: process.env.GITLAB_WEBHOOK_SECRET ?? "",
+
+    // -----------------------------------------------------------------------
+    // Idempotency record retention
+    // How long a processed delivery ID is remembered. Must exceed the longest
+    // window in which a provider may redeliver (GitHub allows manual
+    // redelivery for a few days); 30 is comfortably beyond that.
+    // -----------------------------------------------------------------------
+
+    DEDUP_RETENTION_DAYS: Number(process.env.DEDUP_RETENTION_DAYS) || 30,
 };

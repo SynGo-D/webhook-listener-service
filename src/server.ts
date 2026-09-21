@@ -5,6 +5,7 @@ import { env } from "./config/env.js";
 import { connectDatabase, pool } from "./config/database.js";
 import { connectRabbitMQ, closeRabbitMQ, getRabbitMQChannel, onRabbitMQReconnect } from "./config/rabbitmq.js";
 import { setupMessagingTopology } from "./messaging/topology.js";
+import { startRetentionJob } from "./repositories/retentionJob.js";
 
 async function main(): Promise<void> {
     await connectDatabase();
@@ -28,6 +29,8 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 
+    const stopRetentionJob = startRetentionJob(env.DEDUP_RETENTION_DAYS);
+
     const server = app.listen(env.PORT, () => {
         console.log(`Webhook Listener running on port ${env.PORT}`);
         console.log(`Health: http://localhost:${env.PORT}/health`);
@@ -45,6 +48,7 @@ async function main(): Promise<void> {
     // channel/connection and the Postgres pool before exiting.
     const shutdown = (signal: string): void => {
         console.log(`${signal} received, shutting down gracefully...`);
+        stopRetentionJob();
 
         server.close(() => {
             void (async () => {
