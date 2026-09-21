@@ -2,6 +2,7 @@
 
 import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { webhookLimiter, failedVerificationLimiter } from "./middleware/rateLimit.js";
 import { isRabbitMQConnected } from "./config/rabbitmq.js";
 import { pool } from "./config/database.js";
 import { WebhookIngestionService } from "./services/WebhookIngestionService.js";
@@ -10,9 +11,21 @@ import { createWebhookRoutes } from "./routes/webhookRoutes.js";
 
 const app = express();
 
+// Don't advertise the framework. Free, and there's no reason to tell the
+// internet what to look up exploits for.
+app.disable("x-powered-by");
+
 // ---------------------------------------------------------------------------
 // Global middleware
 // ---------------------------------------------------------------------------
+
+// Rate limiting runs *before* body parsing, deliberately: a throttled
+// request should be rejected without spending anything on reading and
+// parsing up to 2mb of JSON. (Contrast integration-service, where the
+// limiters key on req.body.userId and therefore must run after the parser.)
+// Neither limiter keys on the body, so nothing is lost by running early.
+app.use(webhookLimiter);
+app.use(failedVerificationLimiter);
 
 // Request-size limit: this endpoint is reachable from the public internet
 // (GitHub/GitLab call it directly), so an unbounded body is a DoS vector.
@@ -82,11 +95,7 @@ const webhookController       = new WebhookController(webhookIngestionService);
 // ---------------------------------------------------------------------------
 // Route mounting
 //
-// POST /webhooks/github, POST /webhooks/gitlab. Note: normalize() (Phase 6)
-// and GitLab's extractDeliveryId() (Phase 6) are still stubs — a real,
-// correctly-signed, supported-event request will verify and route
-// correctly, then fail loudly at that stub with a 500 until Phase 6 lands.
-// That's the expected, honest state of this phase.
+// POST /webhooks/github, POST /webhooks/gitlab.
 // ---------------------------------------------------------------------------
 
 app.use("/webhooks", createWebhookRoutes(webhookController));

@@ -4,10 +4,30 @@ import type { ProviderWebhookHandler } from "./ProviderWebhookHandler.js";
 import type { WebhookEvent } from "../models/WebhookEvent.js";
 import type { PullRequestAction, PullRequestState } from "../models/PullRequestEvent.js";
 import { WebhookValidationError } from "../errors/WebhookValidationError.js";
+import { requireFields } from "./requireFields.js";
 import { AppError } from "../errors/AppError.js";
 import { env } from "../config/env.js";
 
 const SIGNATURE_PREFIX = "sha256=";
+
+/** Every path `normalize()` reads — see parsePayload for why nested ones are listed. */
+const GITHUB_REQUIRED_FIELDS = [
+    "action",
+    "number",
+    "pull_request.state",
+    "pull_request.merged",
+    "pull_request.title",
+    "pull_request.html_url",
+    "pull_request.created_at",
+    "pull_request.updated_at",
+    "pull_request.head.ref",
+    "pull_request.head.sha",
+    "pull_request.base.ref",
+    "repository.id",
+    "repository.full_name",
+    "repository.owner.login",
+    "repository.html_url",
+] as const;
 
 /** Only the fields this service actually reads from GitHub's pull_request webhook payload. */
 interface GithubPullRequestPayload {
@@ -175,18 +195,16 @@ export class GithubWebhookHandler implements ProviderWebhookHandler {
      * raw TypeError on `undefined.foo`.
      */
     private parsePayload(payload: unknown): GithubPullRequestPayload {
-        if (
-            !payload ||
-            typeof payload !== "object" ||
-            !("action" in payload) ||
-            !("number" in payload) ||
-            !("pull_request" in payload) ||
-            !("repository" in payload)
-        ) {
-            throw new WebhookValidationError(
-                "GitHub payload is missing required 'action'/'number'/'pull_request'/'repository' fields."
-            );
-        }
+        // Every path normalize() dereferences, checked up front. Listing
+        // the nested ones matters: a payload carrying `pull_request: {}`
+        // clears a top-level-keys-only check and then throws a TypeError
+        // deeper in, which becomes a 500 and an endless GitHub redelivery
+        // loop for a payload that can never succeed.
+        //
+        // `pull_request.user` is deliberately absent from this list —
+        // GitHub sends null for a deleted account, and normalize() already
+        // treats the author as optional.
+        requireFields(payload, GITHUB_REQUIRED_FIELDS, "GitHub");
 
         return payload as GithubPullRequestPayload;
     }
