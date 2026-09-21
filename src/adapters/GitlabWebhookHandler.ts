@@ -5,7 +5,25 @@ import type { WebhookEvent } from "../models/WebhookEvent.js";
 import type { PullRequestAction, PullRequestState } from "../models/PullRequestEvent.js";
 import { AppError } from "../errors/AppError.js";
 import { WebhookValidationError } from "../errors/WebhookValidationError.js";
+import { requireFields } from "./requireFields.js";
 import { env } from "../config/env.js";
+
+/** Every path `normalize()` and `extractDeliveryId()` read — see parsePayload. */
+const GITLAB_REQUIRED_FIELDS = [
+    "object_attributes.iid",
+    "object_attributes.action",
+    "object_attributes.state",
+    "object_attributes.title",
+    "object_attributes.source_branch",
+    "object_attributes.target_branch",
+    "object_attributes.url",
+    "object_attributes.created_at",
+    "object_attributes.updated_at",
+    "project.id",
+    "project.path_with_namespace",
+    "project.namespace",
+    "project.web_url",
+] as const;
 
 /** Only the fields this service actually reads from GitLab's Merge Request Hook webhook payload. */
 interface GitlabMergeRequestPayload {
@@ -190,16 +208,13 @@ export class GitlabWebhookHandler implements ProviderWebhookHandler {
      * dereferencing anything — mirrors GithubWebhookHandler.parsePayload.
      */
     private parsePayload(payload: unknown): GitlabMergeRequestPayload {
-        if (
-            !payload ||
-            typeof payload !== "object" ||
-            !("object_attributes" in payload) ||
-            !("project" in payload)
-        ) {
-            throw new WebhookValidationError(
-                "GitLab payload is missing required 'object_attributes'/'project' fields."
-            );
-        }
+        // See GithubWebhookHandler.parsePayload — same reasoning: a
+        // top-level-keys-only check lets a malformed payload through to a
+        // TypeError, which becomes a 500 and an endless redelivery loop.
+        //
+        // `user` and `object_attributes.last_commit` are deliberately
+        // absent: normalize() already treats both as optional.
+        requireFields(payload, GITLAB_REQUIRED_FIELDS, "GitLab");
 
         return payload as GitlabMergeRequestPayload;
     }

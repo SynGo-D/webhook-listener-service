@@ -42,6 +42,19 @@ export function errorHandler(
         return;
     }
 
+    // express.json()'s size limit raises PayloadTooLargeError, which is not
+    // a SyntaxError and so used to fall through to the 500 branch below.
+    // That mattered: providers retry 5xx, so an oversized delivery — which
+    // will be exactly as oversized on every retry — would be redelivered
+    // indefinitely. 413 tells the provider this is permanent.
+    if ((err as Error & { type?: string }).type === "entity.too.large") {
+        res.status(413).json({
+            success: false,
+            message: "Payload exceeds the maximum accepted webhook size.",
+        });
+        return;
+    }
+
     console.error("[ErrorHandler]", err);
 
     res.status(500).json({
