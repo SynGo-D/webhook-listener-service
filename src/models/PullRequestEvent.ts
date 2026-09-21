@@ -34,6 +34,8 @@ export interface PullRequestEvent extends WebhookEventBase {
     state:  PullRequestState;
 
     title:        string;
+    /** PR body / MR description as written by the author. Absent when empty. */
+    description?: string;
     sourceBranch: string;
     targetBranch: string;
 
