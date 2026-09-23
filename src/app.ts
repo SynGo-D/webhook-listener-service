@@ -2,14 +2,30 @@
 
 import express from "express";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { webhookLimiter, failedVerificationLimiter } from "./middleware/rateLimit.js";
 import { isRabbitMQConnected } from "./config/rabbitmq.js";
 import { pool } from "./config/database.js";
+import { WebhookIngestionService } from "./services/WebhookIngestionService.js";
+import { WebhookController } from "./controllers/WebhookController.js";
+import { createWebhookRoutes } from "./routes/webhookRoutes.js";
 
 const app = express();
+
+// Don't advertise the framework. Free, and there's no reason to tell the
+// internet what to look up exploits for.
+app.disable("x-powered-by");
 
 // ---------------------------------------------------------------------------
 // Global middleware
 // ---------------------------------------------------------------------------
+
+// Rate limiting runs *before* body parsing, deliberately: a throttled
+// request should be rejected without spending anything on reading and
+// parsing up to 2mb of JSON. (Contrast integration-service, where the
+// limiters key on req.body.userId and therefore must run after the parser.)
+// Neither limiter keys on the body, so nothing is lost by running early.
+app.use(webhookLimiter);
+app.use(failedVerificationLimiter);
 
 // Request-size limit: this endpoint is reachable from the public internet
 // (GitHub/GitLab call it directly), so an unbounded body is a DoS vector.
@@ -70,11 +86,20 @@ app.get("/ready", async (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Dependency injection — wire service → controller → routes
+// ---------------------------------------------------------------------------
+
+const webhookIngestionService = new WebhookIngestionService();
+const webhookController       = new WebhookController(webhookIngestionService);
+
+// ---------------------------------------------------------------------------
 // Route mounting
 //
-// Webhook ingestion routes (POST /webhooks/github, POST /webhooks/gitlab)
-// are added once the controller/provider-handler layers exist — see
-// src/controllers/README.md and src/adapters/README.md for the plan.
+// POST /webhooks/github, POST /webhooks/gitlab.
+// ---------------------------------------------------------------------------
+
+app.use("/webhooks", createWebhookRoutes(webhookController));
+
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

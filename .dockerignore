@@ -1,0 +1,17 @@
+# Everything the image does not need, and one thing it must never have.
+#
+# .env is listed first because it is the reason this file exists: a copied
+# .env would bake credentials into an image layer, where they survive every
+# later deletion and travel to anyone who can pull the image. Configuration
+# reaches the container through the environment at run time.
+.env
+.env.*
+
+node_modules
+dist
+coverage
+.git
+.gitignore
+*.md
+tests
+vitest.config.*
