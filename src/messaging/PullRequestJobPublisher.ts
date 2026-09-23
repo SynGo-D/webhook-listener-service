@@ -32,6 +32,18 @@ export interface PRJob {
     targetBranch?: string;
     title?:        string;
     description?:  string;
+
+    // Who opened the pull request. The webhook has always carried this
+    // and the normalized event has always kept it; it stopped here, so
+    // every analysis downstream was unattributable and no per-contributor
+    // view of the work was possible.
+    //
+    // Optional for the same reason as the fields above, and because the
+    // provider genuinely omits it for a deleted account.
+    author?: {
+        providerUserId: string;
+        username:       string;
+    };
 }
 
 /**
@@ -107,5 +119,6 @@ export function toPRJob(event: PullRequestEvent): PRJob {
         targetBranch: event.targetBranch,
         title:        event.title,
         description:  event.description?.slice(0, MAX_DESCRIPTION_LENGTH),
+        author:       event.author,
     };
 }

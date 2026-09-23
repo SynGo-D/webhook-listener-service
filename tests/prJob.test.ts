@@ -67,3 +67,18 @@ describe("toPRJob", () => {
         expect(toPRJob(event({ description: undefined })).description).toBeUndefined();
     });
 });
+
+describe("toPRJob author", () => {
+    it("carries the author through to the queue", () => {
+        const job = toPRJob(event({ author: { providerUserId: "77", username: "amara" } }));
+
+        expect(job.author).toEqual({ providerUserId: "77", username: "amara" });
+    });
+
+    it("omits the author when the provider did not report one", () => {
+        // A deleted account leaves pull_request.user null, and the
+        // handler treats the author as optional. An analysis without an
+        // author is still a valid analysis.
+        expect(toPRJob(event()).author).toBeUndefined();
+    });
+});
