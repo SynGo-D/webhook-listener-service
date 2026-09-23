@@ -277,3 +277,48 @@ describe("WebhookIngestionService — repository allowlist", () => {
         expect(publisher.publish).not.toHaveBeenCalled();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Only new code is analyzed
+// ---------------------------------------------------------------------------
+
+describe("WebhookIngestionService — which pull request actions are analyzed", () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    it.each(["opened", "reopened", "synchronize"])("publishes a %s pull request", async (action) => {
+        const { service, publisher } = makeHarness();
+        const payload = { ...PAYLOAD, action };
+        const body = Buffer.from(JSON.stringify(payload));
+        const headers = {
+            "x-hub-signature-256": "sha256=" + createHmac("sha256", GITHUB_SECRET).update(body).digest("hex"),
+            "x-github-event": "pull_request",
+            "x-github-delivery": `d-${action}`,
+        };
+
+        expect((await service.ingest("github", body, headers, payload)).outcome).toBe("accepted");
+        expect(publisher.publish).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ["closed", { action: "closed" }],
+        ["merged", { action: "closed", pull_request: { ...PAYLOAD.pull_request, merged: true } }],
+        ["edited", { action: "edited" }],
+        ["labeled", { action: "labeled" }],
+    ])("ignores a %s pull request without publishing", async (_label, overrides) => {
+        // Each of these would otherwise cost a clone, a linter run and an
+        // AI review for a change that contains no new code.
+        const { service, publisher } = makeHarness();
+        const payload = { ...PAYLOAD, ...overrides };
+        const body = Buffer.from(JSON.stringify(payload));
+        const headers = {
+            "x-hub-signature-256": "sha256=" + createHmac("sha256", GITHUB_SECRET).update(body).digest("hex"),
+            "x-github-event": "pull_request",
+            "x-github-delivery": `d-${_label}`,
+        };
+
+        const result = await service.ingest("github", body, headers, payload);
+
+        expect(result.outcome).toBe("ignored");
+        expect(publisher.publish).not.toHaveBeenCalled();
+    });
+});

@@ -255,3 +255,18 @@ describe("payload shape validation", () => {
         });
     });
 });
+
+describe("GitLab's ambiguous 'update' action", () => {
+    it("counts as new commits only when the payload carries oldrev", () => {
+        const handler = new GitlabWebhookHandler();
+        const pushed = gitlabPayload({
+            object_attributes: { ...gitlabPayload().object_attributes, action: "update", oldrev: "old123" },
+        });
+        const renamed = gitlabPayload({
+            object_attributes: { ...gitlabPayload().object_attributes, action: "update" },
+        });
+
+        expect(handler.normalize({}, pushed, "d1").action).toBe("synchronize");
+        expect(handler.normalize({}, renamed, "d2").action).toBe("edited");
+    });
+});
