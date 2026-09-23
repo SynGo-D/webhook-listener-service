@@ -1,10 +1,8 @@
 # services
 
-Application/orchestration logic for the webhook ingestion pipeline:
-verify signature → normalize → deduplicate → publish. Coordinates the
-adapters, repositories, and messaging layers; contains no HTTP concerns
-(that's the controller's job) and no provider-specific payload parsing
-(that's the adapters' job).
-
-Planned: introduced incrementally alongside Phases 4-8 as each pipeline
-step is built.
+`WebhookIngestionService.ingest()` orchestrates the pipeline: verify
+signature → check the event is supported → extract delivery ID →
+[Phase 7: deduplicate] → normalize → [Phase 8: publish]. Contains no HTTP
+concerns (the controller's job) and no provider-specific payload parsing
+(the adapters' job) — it only sequences calls to the adapter it gets from
+`ProviderHandlerFactory`.

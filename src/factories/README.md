@@ -1,9 +1,9 @@
 # factories
 
-Selects the correct provider adapter (from `src/adapters/`) for an incoming
-webhook request (Factory Pattern) — e.g. by inspecting the route it arrived
-on (`/webhooks/github` vs `/webhooks/gitlab`) or a provider-identifying
-header. Centralizes that selection so the controller never branches on
-provider itself.
-
-Planned (Phase 3): `ProviderHandlerFactory.create(provider)`.
+`ProviderHandlerFactory.create(provider)` — selects the correct provider
+adapter (from `src/adapters/`) for an incoming webhook request (Factory
+Pattern). The caller (the webhook controller, Phase 5) already knows the
+provider from which route matched (`/webhooks/github` vs
+`/webhooks/gitlab`), so this factory only centralizes handler
+instantiation — the controller depends on `ProviderWebhookHandler`, never
+on `GithubWebhookHandler`/`GitlabWebhookHandler` directly.
