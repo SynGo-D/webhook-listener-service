@@ -17,6 +17,17 @@ export type WebhookIngestResult =
 const CURRENT_EVENT_TYPE = "pull_request";
 
 /**
+ * The actions that mean "there is new code to analyze". Everything else a
+ * provider sends for a PR — closing, merging, editing the title, adding a
+ * label — is acknowledged and dropped here rather than published.
+ *
+ * Without this, every one of those events would run a full analysis
+ * downstream: a clone, the linters and an AI review that costs real money.
+ * A closed or merged PR's branch may not even exist any more.
+ */
+const ANALYZED_ACTIONS = new Set(["opened", "reopened", "synchronize"]);
+
+/**
  * Orchestrates the webhook ingestion pipeline:
  *
  *   identify claimed repository → look up its secrets → verify signature
@@ -128,6 +139,15 @@ export class WebhookIngestionService {
 
         try {
             const event = handler.normalize(headers, payload, deliveryId);
+
+            if (!ANALYZED_ACTIONS.has(event.action)) {
+                // Kept marked as processed: it was handled, just not analyzed.
+                return {
+                    outcome: "ignored",
+                    reason:  `Pull request action "${event.action}" does not change the code to analyze.`,
+                };
+            }
+
             await this.publisher.publish(event);
 
             return { outcome: "accepted", deliveryId };

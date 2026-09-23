@@ -44,6 +44,8 @@ interface GitlabMergeRequestPayload {
         created_at:    string;
         updated_at:    string;
         last_commit?:  { id: string };
+        /** Present only when the update included new commits — see mapAction. */
+        oldrev?:       string;
     };
 }
 
@@ -162,7 +164,7 @@ export class GitlabWebhookHandler implements ProviderWebhookHandler {
             },
 
             pullRequestId: attrs.iid.toString(),
-            action:        this.mapAction(attrs.action),
+            action:        this.mapAction(attrs.action, attrs.oldrev),
             state:         this.mapState(attrs.state),
 
             title:        attrs.title,
@@ -192,11 +194,17 @@ export class GitlabWebhookHandler implements ProviderWebhookHandler {
      * approximation, not a precise signal, and downstream consumers should
      * treat it that way.
      */
-    private mapAction(action: string): PullRequestAction {
+    /**
+     * GitLab sends "update" both for new commits and for an edit to the
+     * title, description, labels or assignees. Only a push carries
+     * `oldrev` (the previous head), which is what distinguishes "there is
+     * new code to analyze" from "someone renamed the MR".
+     */
+    private mapAction(action: string, oldrev?: string): PullRequestAction {
         switch (action) {
             case "open":   return "opened";
             case "reopen": return "reopened";
-            case "update": return "synchronize";
+            case "update": return oldrev ? "synchronize" : "edited";
             case "close":  return "closed";
             case "merge":  return "merged";
             default:       return "unknown";
