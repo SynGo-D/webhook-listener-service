@@ -82,3 +82,42 @@ describe("toPRJob author", () => {
         expect(toPRJob(event()).author).toBeUndefined();
     });
 });
+
+describe("toPRJob head repository", () => {
+    it("carries the fork's repository when the branch lives there", () => {
+        // Without this the consumer fetches the branch from the base
+        // repository, where it does not exist, and the job dies before
+        // any analysis runs.
+        const job = toPRJob(event({
+            head: {
+                fullName: "contributor/shop",
+                cloneUrl: "https://github.com/contributor/shop.git",
+                isPrivate: false,
+            },
+        }));
+
+        expect(job.head).toEqual({
+            fullName: "contributor/shop",
+            cloneUrl: "https://github.com/contributor/shop.git",
+            isPrivate: false,
+        });
+    });
+
+    it("omits it for an ordinary same-repository pull request", () => {
+        // It would only repeat the clone URL the consumer already has.
+        const job = toPRJob(event({
+            head: {
+                fullName: "acme/shop",
+                cloneUrl: "https://github.com/acme/shop.git",
+                isPrivate: false,
+            },
+        }));
+
+        expect(job.head).toBeUndefined();
+    });
+
+    it("omits it when the provider reported no head repository", () => {
+        // A fork deleted since the pull request was opened.
+        expect(toPRJob(event()).head).toBeUndefined();
+    });
+});

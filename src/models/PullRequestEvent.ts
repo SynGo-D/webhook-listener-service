@@ -44,6 +44,22 @@ export interface PullRequestEvent extends WebhookEventBase {
 
     author?: PullRequestActor;
 
+    /**
+     * The repository the source branch lives in.
+     *
+     * Usually the same repository the pull request targets, and then this
+     * adds nothing. For a fork it is the contributor's own repository,
+     * and it is the only place the branch can be fetched from.
+     *
+     * Absent when the provider does not report it, or when the fork has
+     * been deleted since the pull request was opened.
+     */
+    head?: {
+        fullName:  string;
+        cloneUrl:  string;
+        isPrivate: boolean;
+    };
+
     /** Web URL to the PR/MR itself (not the API URL). */
     url: string;
 

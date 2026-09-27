@@ -44,6 +44,19 @@ export interface PRJob {
         providerUserId: string;
         username:       string;
     };
+
+    // Where the source branch actually lives. Absent when it is the same
+    // repository the pull request targets, which is the common case; set
+    // for a fork, where cloneUrl is the only place the branch exists.
+    //
+    // Optional like the fields above: a consumer that predates it still
+    // works for same-repository pull requests, which is what it handled
+    // before this existed.
+    head?: {
+        fullName:  string;
+        cloneUrl:  string;
+        isPrivate: boolean;
+    };
 }
 
 /**
@@ -120,5 +133,11 @@ export function toPRJob(event: PullRequestEvent): PRJob {
         title:        event.title,
         description:  event.description?.slice(0, MAX_DESCRIPTION_LENGTH),
         author:       event.author,
+        // Only sent when it differs from the repository being merged
+        // into: for the ordinary same-repository pull request it would
+        // just repeat cloneUrl.
+        head: event.head && event.head.fullName !== event.repository.fullName
+            ? event.head
+            : undefined,
     };
 }

@@ -41,7 +41,10 @@ interface GithubPullRequestPayload {
         created_at: string;
         updated_at: string;
         user:       { id: number; login: string } | null;
-        head:       { ref: string; sha: string };
+        // head.repo is null when the fork has since been deleted, and
+        // differs from `repository` whenever the contributor worked on
+        // their own fork — which is where the branch actually lives.
+        head:       { ref: string; sha: string; repo: { full_name: string; clone_url: string; private: boolean } | null };
         base:       { ref: string };
     };
     repository: {
@@ -146,6 +149,18 @@ export class GithubWebhookHandler implements ProviderWebhookHandler {
             sourceBranch: pr.head.ref,
             targetBranch: pr.base.ref,
             commitSha:    pr.head.sha,
+
+            // Where the branch actually lives. For a pull request opened
+            // from a fork this is the contributor's repository, not the
+            // one being merged into — fetching the branch from the base
+            // repository fails outright, because it is not there.
+            head: pr.head.repo
+                ? {
+                    fullName:  pr.head.repo.full_name,
+                    cloneUrl:  pr.head.repo.clone_url,
+                    isPrivate: pr.head.repo.private,
+                }
+                : undefined,
 
             author: pr.user
                 ? { providerUserId: pr.user.id.toString(), username: pr.user.login }
