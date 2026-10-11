@@ -8,21 +8,17 @@ import { setupMessagingTopology } from "./messaging/topology.js";
 import { startRetentionJob } from "./repositories/retentionJob.js";
 
 async function main(): Promise<void> {
-    await connectDatabase();
-    await connectRabbitMQ();
+    await connectDatabase();                // Verify that PostgreSQL is reachable.
+    await connectRabbitMQ();                // Connect to RabbitMQ and create a publisher confirm channel.
 
-    // Re-run topology setup after every reconnect — the exchange/queue/
-    // binding are durable and persist on the broker across a connection
-    // drop, but a new channel still needs to (re-)declare them. Registered
-    // before the initial setup call below so the exact same function
-    // handles both the first connection and every reconnect thereafter.
-    onRabbitMQReconnect(() => setupMessagingTopology(getRabbitMQChannel()));
+    
+    onRabbitMQReconnect(() => setupMessagingTopology(getRabbitMQChannel()));    // Return the active RabbitMQ channel, or throw if unavailable.
 
     // Fail-fast, same as the connection checks above: this service
     // shouldn't accept webhook traffic it can't durably hand off to
     // pr_queue.
     try {
-        await setupMessagingTopology(getRabbitMQChannel());
+        await setupMessagingTopology(getRabbitMQChannel());           
         console.log("RabbitMQ messaging topology ready.");
     } catch (error) {
         console.error("Failed to set up RabbitMQ messaging topology:", error);
